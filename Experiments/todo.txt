@@ -1,0 +1,29 @@
+CODING To Do list:
+
+- look at the annulus, test the various winds testing the various regularity assumptions, and see if we recover one eigenvalue 0 as we expect, even as we vary the regularity on the wind. Another question to answer her is the following. Look at convergence of eigenvalues here as well etc.
+    - theorem 4 says the number of 0 should be at least the betti number
+    - theorem 5 says that as we increase Rm it become exactly, i.e. actually if we decrease epsilon we do not get 0.  
+    - so lets test this and as we vary regularity.
+
+- Now look at the L-shape, we have some numerical values for the eigenvalues that are calculated with a constant velcoity i think using some paper, can we recreate these ; convergence? also what happens as we keep increasing Rm in this case? 
+
+- pac man, what are the eigenvalues we get? do we also get an eigenvector focused on the singularity; what happens to the eigenvalues we recover and their convergence rate as the mouth closes. 
+
+- what happens to our resutls / stability / eigenvalues recoverd  as we increase the Rm value? we expect 
+
+
+- Since the true spectrum may be unknown in hard cases, compare results across:
+    -different meshes,
+    -different element families,
+    -different polynomial orders,
+    -and different formulations.
+
+- Use domain shapes with different topology to test FEEC bounds and Betti-number-related behavior. (this may have been mentioned already)
+
+- full hodge formulation has not been tested with weaker regularity assumptions as well.
+
+TO DO:
+- finish pseudospecra (morning) 
+- recreate all the results from the kaibuboffi paper, ad this to the relevant sections
+    - then, only then, do we extend this.
+- submit KAUST application

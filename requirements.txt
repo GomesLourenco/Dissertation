@@ -1,0 +1,16 @@
+# Exact versions of the environment the thesis results were produced in (macOS, Python 3.14.5).
+# Firedrake and its PETSc/SLEPc stack are not pip-installable from PyPI alone: install Firedrake
+# first (https://www.firedrakeproject.org/install.html) with SLEPc, MUMPS and Netgen enabled,
+# then `pip install` the rest into that environment.
+firedrake==2026.4.1
+petsc4py==3.25.0
+slepc4py==3.25.0
+mpi4py==4.1.2
+numpy==2.4.6
+scipy==1.17.1
+pandas==3.0.5
+matplotlib==3.10.9
+netgen-mesher==6.2.2606
+ngsPETSc==0.2.1
+gmsh==4.15.2
+ipykernel==7.2.0

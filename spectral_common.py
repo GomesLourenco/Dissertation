@@ -139,17 +139,24 @@ def _hager_cond1(S):
     return spla.onenormest(Ssp) * spla.onenormest(inverse)
 
 
-def condition_estimates(A, M, sigma):
+def condition_estimates(A, M, sigma, hager=True):
     r"""Two independent estimates of $\kappa(A-\sigma M)$.
 
     ``Hager kappa_1`` is the normwise condition number; MUMPS' ``COND1`` is the
     componentwise Arioli--Demmel--Duff quantity computed by the factorisation
     itself, which sits an order of magnitude lower and is carried as an
     independent check.  ``INFOG(1) = 0`` confirms the factorisation succeeded.
+
+    ``hager=False`` reports ``None`` for the normwise estimate and skips it.  The
+    two are not equally cheap: MUMPS' estimate rides on a factorisation the
+    spectral transformation has to perform in any case, while the normwise one
+    needs a second, independent sparse LU, and on the largest pencils that
+    doubles the peak memory of the whole solve.  Where a study is memory-bound,
+    this is the estimate to keep.
     """
     S = shifted_matrix(A, M, sigma)
     cond, infog1 = _mumps_cond1(S)
-    return {r"Hager $\kappa_1$": _hager_cond1(S),
+    return {r"Hager $\kappa_1$": _hager_cond1(S) if hager else None,
             "MUMPS COND1": cond, "INFOG(1)": infog1}
 
 
@@ -196,8 +203,10 @@ class Result:
         return self.A.getSize()[0]
 
     def __repr__(self):
+        k = self.kappa1
         return (f"Result({self.meta.get('form', '?')}, "
-                f"n={len(self.values)}, kappa1={self.kappa1:.2e})")
+                f"n={len(self.values)}, "
+                f"kappa1={'--' if k is None else format(k, '.2e')})")
 
 
 def solve_pencil(A, M, tau, nev=25, n_eigs=None, space=None, cond=True,
@@ -211,7 +220,10 @@ def solve_pencil(A, M, tau, nev=25, n_eigs=None, space=None, cond=True,
     matrix is an indefinite saddle point, so MUMPS factorises it directly.
 
     Unless ``cond=False`` the condition of the matrix actually factorised is
-    estimated and attached, so that no table can quietly omit it.
+    estimated and attached, so that no table can quietly omit it.  ``cond="mumps"``
+    keeps MUMPS' own ``COND1`` -- which the factorisation produces anyway -- and
+    skips the normwise estimate, whose separate sparse LU is what makes
+    conditioning expensive on the largest pencils.
 
     ``inf_tol`` discards the multiplier block's modes, which an ill-conditioned
     coarse pencil returns as large finite numbers rather than as ``inf``.
@@ -241,7 +253,8 @@ def solve_pencil(A, M, tau, nev=25, n_eigs=None, space=None, cond=True,
     if n_eigs is not None:
         found = found[:n_eigs]
 
-    kappa = condition_estimates(A, M, tau) if cond else None
+    kappa = (condition_estimates(A, M, tau, hager=(cond != "mumps"))
+             if cond else None)
     if kappa is not None:
         KAPPA_LOG.append(dict(tau=tau, n=A.getSize()[0], **meta, **kappa))
 

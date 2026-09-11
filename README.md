@@ -1,202 +1,124 @@
-# Magnetic advection–diffusion eigenvalue problems in Firedrake
+# Finite Element Discretisations of Magnetic Advection–Diffusion Eigenvalue Problems — code
 
-Two self-contained studies of the magnetic advection–diffusion eigenvalue problem
+Reproducibility folder for the MSc dissertation *Finite Element Discretisations of Magnetic Advection–Diffusion Eigenvalue Problems* (Lourenço A. Gomes, University of Oxford, 2026). Every figure and table of Chapter 4 and Appendix A is produced by one of the seven notebooks below, which are ordered and headed exactly as the thesis: each `## Figure X.Y: …` / `## Table X.Y: …` heading is followed by the cells that compute it, chapter items first and the appendix items under `# Appendix` at the end of each notebook.
 
-$$\varepsilon\,\mathrm{d}^{k-1}\delta^{k}u \;+\; \mathrm{d}^{k-1}\iota^{k}_\beta u \;=\; \lambda\,u,
-\qquad \varepsilon = R_m^{-1},$$
+The eigenvalue problem is the magnetic advection–diffusion operator on differential $k$-forms, $\varepsilon\,\mathrm{d}^{k-1}\delta^k u + \mathrm{d}^{k-1}\iota^k_\beta u = \lambda u$ with $\varepsilon = R_m^{-1}$, discretised in Firedrake with FEEC elements and solved by SLEPc shift-and-invert Krylov–Schur with a MUMPS factorisation; $\varepsilon$-pseudospectra come from a two-sided partial-Schur projection in a physically weighted metric (`pseudospectra_partial_schur.py`).
 
-on $\Omega \subset \mathbb{R}^2$, one for **1-forms** and one for **top forms**. They share
-a solver architecture (SLEPc shift-and-invert with a MUMPS direct solve) and differ in
-every function space and weak form.
+## Layout
 
-| File | $k$ | What it is |
+| Notebook | Thesis section | Reproduces |
 |:--|:--|:--|
-| `baseline.ipynb` | $1$ | **Baseline** on the square: analytic-spectrum validation, $h$- and $p$-convergence tables with computed rates, eigenfunction convergence, and $\varepsilon$-pseudospectra for the $W^{1,\infty}$ winds $\beta_2$, $\beta_4$. |
-| `MHD_Spectral_Tutorial.ipynb` | $1$ | Tutorial: three formulations (`A(CG)`, `B(N1)`, `B(N2)`) on a square and an L-shape, with discontinuous winds, convergence studies and left eigenvectors. |
-| `TopForm_Spectral_Benchmark.ipynb` | $n=2$ | Benchmark: six discretisations at $k=n$, including the Boffi–Brezzi–Gastaldi $P_1$–div$(P_1)$ trap on a criss-cross mesh. |
-| `Lshape_Pseudospectra_Partial_Schur.ipynb` | $1$ | The partial-Schur-projection pseudospectrum method, on the L-shape. |
-| `beta_regularity_1form.ipynb` | $1$ | **$\beta$-regularity**: what degrading the smoothness of the velocity field does to spectra, convergence rates and pseudospectra. |
-| `beta_regularity_topform.ipynb` | $n=2$ | The same programme at $k=n$, with the deliberately spurious element as a paired control. |
-| `pseudospectra_partial_schur.py` | — | The $\varepsilon$-pseudospectrum engine, shared by every notebook. Takes assembled `PETSc.Mat` objects and knows nothing about the formulation. |
-| `spectral_common.py` | — | Meshes, the shift-and-invert solve, the conditioning estimates, the numerical-analysis utilities and the table formatter. Form-degree agnostic. |
-| `baseline.py`, `mhd_spectral_tutorial.py`, `topform_spectral_benchmark.py` | | Runnable scripts, auto-exported from the notebooks. Each reproduces every figure. |
-| `figures/` | | PDF output (20 baseline, 38 top-form benchmark, 51 $\beta$-regularity, 6 tutorial). |
+| [`01_baseline_1forms.ipynb`](01_baseline_1forms.ipynb) | 4.1.1 Baseline Convergence and Pseudospectra for 1-Forms (Appendix A.1.1) | Table 4.3, Figure 4.1, Figure 4.2, Figure A.1, Figure A.2, Figure A.3, Figure A.4, Figure A.5 |
+| [`02_topform_spectral_pollution.ipynb`](02_topform_spectral_pollution.ipynb) | 4.1.2 Spectral Pollution in Top Forms (Appendix A.1.2) | Table 4.4, Figure 4.3, Figure 4.4, Figure 4.5, Table A.1, Table A.2, Table A.3, Table A.4 |
+| [`03_beta_regularity.ipynb`](03_beta_regularity.ipynb) | 4.2 β Regularity (Appendix A.2) | Table 4.5, Figure 4.6, Figure 4.7, Figure 4.8, Figure 4.9, Table A.5, Table A.6, Table A.7, Table A.8, Table A.9, Figure A.6, Figure A.7, Table A.10, Table A.11, Figure A.8, Figure A.9 |
+| [`04_domain_regularity_lshape.ipynb`](04_domain_regularity_lshape.ipynb) | 4.3.1 L-Shape Domain (Appendix A.3.1) | Table 4.6, Figure 4.10, Figure 4.11, Figure 4.12, Figure 4.13, Figure 4.14, Table A.12, Figure A.10 |
+| [`05_domain_regularity_sector.ipynb`](05_domain_regularity_sector.ipynb) | 4.3.2 Re-entrant sector (Appendix A.3.2) | Figure 4.15, Figure A.11, Table A.13, Table A.14, Table A.15 |
+| [`06_topological_zero_modes.ipynb`](06_topological_zero_modes.ipynb) | 4.4 Topological Constraints and Stationary Modes (Appendix A.4) | Table 4.7, Figure A.12 |
+| [`07_full_hodge.ipynb`](07_full_hodge.ipynb) | 4.5 The Full Hodge-Laplacian | Table 4.8, Table 4.9 |
 
----
-
-## $\beta$-regularity — `beta_regularity_1form.ipynb`, `beta_regularity_topform.ipynb`
-
-Both on $\Omega=(0,\pi)^2$, both run every experiment in three (or four) formulations that
-discretise the same operator, so consistency between them serves as a diagnostic where no
-analytic answer exists. Fields: `b6`, `b7`, `b8` in $L^\infty\setminus W^{1,\infty}$, and the
-vortex `b9`$(\alpha)$ in $L^p$ with $\alpha$ dialling the singularity.
-
-**What survives the loss of regularity**
-
-* $O(h^{2r})$ on the first five eigenvalues, for every field down to the $L^p$ vortex, in
-  every formulation — and across two decades of $R_m$.
-* For $\beta = (f(x),0)$ or $(f(y),0)$, however rough $f$, the $1$-form problem keeps the
-  **exact** eigenvalues $\lambda = n^2/R_m$; recovered to $10^{-9}$, validating the
-  reference values independently of the cross-validation.
-* The well-posedness shift $\nu$ stays spectrally inert to $10^{-12}$ for $L^\infty$ fields.
-
-**What degrades, and in what order**
-
-1. **$p$-refinement first.** Exponential convergence goes as soon as $\beta$ leaves
-   $W^{1,\infty}$, and is weakest for the point singularity. For rough data, refine $h$
-   before raising $r$.
-2. **Cross-formulation agreement next**, monotonically: 7–11 digits for the $L^\infty$
-   fields (worst for `b8`, the only one neither a gradient nor solenoidal), falling from 8
-   to 5 as $\alpha$ goes $1 \to 1.75$. A usable proxy for regularity where no estimate exists.
-3. **The rate itself last**, and only where a strong singularity meets a high $R_m$.
-
-**Pollution is a property of the space pair, not of the data** (top-form notebook). The
-shadow spectrum of $\sigma(P_1$–div$P_1)$ moves by 12% across every field while the genuine
-spectrum moves by 45%, and by under 0.1% across the whole range of $\alpha$. Roughening
-$\beta$ neither creates pollution in a sound discretisation nor removes it from a broken
-one. The $3\varepsilon(m^2+n^2)$ rule of the diffusive limit does **not** survive advection:
-the diffusive part of a spurious eigenvalue is tripled, the advective part is not — a
-complex spurious mode carries an imaginary part within 2% of the genuine mode it shadows.
-
-Conditioning is reported with every table and every figure in both notebooks, and is flat in
-$\alpha$ and in the roughness of $\beta$: nothing that degrades is the linear algebra.
-
----
-
-## Two conventions in the study notebooks
-
-**One figure per cell, one panel per file.** No subplot grids: every figure is drawn in
-its own cell, with no plotting helper and no loop over panels, and saved to its own PDF.
-Composition into rows and grids is left to the document that uses them.
-
-**Pseudospectra come from a module.** `pseudospectra_partial_schur.py` implements the
-six-step partial-Schur projection — shift-and-invert, column-pivoted QR, QZ, randomised
-$\sigma_{\min}$ sampling, interpolation — behind `pseudospectrum(A, M, tau, ...)` and
-`plot_pseudospectrum(result)`. The notebooks assemble a pencil and hand it over.
-
----
-
-## Baseline — `baseline.ipynb`
-
-$\Omega = (0,\pi)^2$, $k = 1$, criss-cross meshes. The control against which every later
-experiment is read: convex domain, analytic spectrum, Lipschitz winds.
-
-* **Spectrum.** All three formulations reproduce the Maxwell values $m^2+n^2$
-  ($m,n\ge0$, not both zero) to five or six digits at $p=1$, $N=64$; the spectrum is real
-  to round-off, as a self-adjoint operator requires.
-* **Convergence, as tables of computed rates and as figures.** $h$-refinement gives exactly
-  $O(h^{2p})$ — observed $2.00$ at $p=1$ and $4.00$ at $p=2$ — in all three formulations;
-  $p$-refinement is exponential, reaching $10^{-13}$ by $p=5$. A 1×2 panel is produced
-  separately for each formulation so any one can carry the main text.
-* **Eigenfunctions.** Measured as the **gap between eigenspaces** — the sine of the largest
-  principal angle in $L^2$ — because $\lambda = 1$ and $\lambda = 4$ are double and a
-  computed eigenvector is then defined only up to a rotation within the eigenspace. The
-  same field $B$ is compared for all three formulations. Here they differ: `B(N2)` converges at $O(h^2)$ (the full space contains all of
-  $\mathcal{P}_1$), while `B(N1)` and `A(CG)` converge at $O(h)$ — the latter because the
-  field is $\nabla\times A_h$ and differentiating costs an order. `B(N1)` therefore holds
-  the best eigenvalues and among the worst fields.
-* **Pseudospectra** for $\beta_2 = (x,-y)$ and $\beta_4 = (-y,x)$ at $R_m = 1$, via
-  `pseudospectra_partial_schur.py`, with the eigenvalues overlaid. Spectrum and
-  pseudospectrum agree: tight, near-circular level sets around each eigenvalue. $\beta_2$
-  is a gradient field and its spectrum is real to round-off (King's Theorem 7); $\beta_4$
-  is not, and its spectrum leaves the axis in conjugate pairs.
-* **Conditioning** is reported with every table. `A(CG)` grows at the classical
-  $O(h^{-2})$; the mixed pencils grow closer to $O(h^{-4})$, because the saddle-point
-  blocks are assembled unscaled. Worst over 60 solves: $4.5\times10^7$, `INFOG(1) = 0`
-  throughout.
-* **Deliberately omitted:** the $R_m$ sweep and the low-regularity fields
-  ($L^\infty\setminus W^{1,\infty}$ shears, $L^p$ vortex), which are the subject of the
-  following sections.
-
----
-
-## 1-forms — `MHD_Spectral_Tutorial.ipynb`
-
-$\mathcal{L}B = \varepsilon\,\nabla\times\nabla\times B - \nabla\times(u\times B) = \lambda B$
-with $\nabla\!\cdot B=0$, on the square $(0,\pi)^2$ and an L-shape with a $3\pi/2$
-re-entrant corner.
-
-* **Formulations** — `A(CG)` ($\mathrm{CG}_r$ + a real gauge multiplier, applied as a
-  rank-one border), `B(N1)` ($\mathrm{N1curl}_r\times\mathrm{CG}_r$), `B(N2)`
-  ($\mathrm{N2curl}_r\times\mathrm{CG}_{r+1}$).
-* **Reference data** — $\lambda=(m^2+n^2)/R_m$ on the square; the Dauge Maxwell benchmark
-  rescaled by $(2/\pi)^2$ on the L-shape; and, for any shear $u=(f(y),0)$, the exact
-  family $\lambda = n^2/R_m$ with $A=\cos(ny)$.
-* **Results** — $O(h^2)$ on the convex domain, $O(h^{4/3})$ for the corner-singular mode;
-  left eigenvectors from the transposed pencil; $M$-norm condition numbers that are
-  mesh-independent and exactly 1 on simple self-adjoint eigenvalues.
-
-## Top forms — `TopForm_Spectral_Benchmark.ipynb`
-
-At $k=n=2$ the closedness constraint is vacuous and the multiplier disappears. In the
-rotated ($H(\operatorname{div})$) complex, $\iota^n_\beta u \leftrightarrow u\beta$ and
-$\delta^n \leftrightarrow -\nabla$, so the problem is
-
-$$-\varepsilon\Delta u + \nabla\!\cdot(\beta u) = \lambda u, \qquad u|_{\partial\Omega}=0,$$
-
-posed in the total flux $\sigma := \varepsilon\delta^n u + \iota^n_\beta u \in H(\operatorname{div})$.
-
-* **Discretisations** — `A(CG)` (primal $H^1_0$); `B(RT)`/`B(BDM)` (mixed,
-  $\mathrm{RT}_r\times\mathrm{DG}_{r-1}$ and $\mathrm{BDM}_r\times\mathrm{DG}_{r-1}$);
-  `s(RT)`/`s(BDM)` (the shifted $\sigma$-formulation, $\nu$ from Lemma 4); and
-  `s(P1-divP1)` with $\Sigma_h=[P_1]^2$, $V_h=\operatorname{div}\Sigma_h$ on a criss-cross
-  mesh.
-* **Reference data** — $\lambda=\varepsilon(m^2+n^2)$, $m,n\ge1$; for constant $\beta$ the
-  exact rigid shift $+|\beta|^2/4\varepsilon$; King's and Zeldovich's theorems as
-  structural checks.
-* **Conditioning** — every solve estimates $\kappa(A-\sigma M)$ for the matrix MUMPS
-  actually factorised, and every results table carries it. Two estimators, calibrated
-  against exact dense values on small meshes: the normwise Hager–Higham $\kappa_1$
-  (sparse LU + `onenormest`) and MUMPS' own `COND1` (`ICNTL(11)=1` → `RINFOG(10)`, read
-  through `Mat.getMumpsRinfog`). Over the 83 solves in the notebook the worst
-  $\kappa_1$ is $3.3\times10^5$ and `INFOG(1) = 0` throughout — about five digits lost
-  of sixteen.
-* **Main findings**
-  * The five FEEC discretisations are clean over all 100 computed eigenvalues; the
-    Lemma-3 shift $\nu$ is spectrally inert to $10^{-12}$.
-  * On the criss-cross mesh $\operatorname{div}[P_1]^2$ has codimension $N^2$; the cokernel
-    is exactly the checkerboard mode, constructed in closed form and verified to machine
-    precision.
-  * `s(P1-divP1)` produces a **complete shadow spectrum at $3\varepsilon(m^2+n^2)$** with
-    the true multiplicities, converging at the full $O(h^2)$ rate to those wrong values.
-    The eigenmodes are the checkerboard times a genuine envelope.
-  * Under advection the spurious modes are camouflaged, not exposed: their imaginary parts
-    track the genuine ones to within 2%, and by $R_m=20$ the first sits within 7% of
-    $\lambda_1$.
-  * The genuine modes of `s(P1-divP1)` converge at the full $O(h^2)$ in both eigenvalue
-    and eigenfunction — once the indexing is repaired by matching against the exact list,
-    since the spurious value shifts every position after it. Rate is not the failure; the
-    **count** is.
-  * The resolvent does not detect the pollution either: $\sigma_{\min}(zM-A)$ collapses at
-    the spurious eigenvalue exactly as at a genuine one, because it *is* an eigenvalue of
-    the discrete pencil.
-  * Two reliable diagnostics: matching against a FEEC pair on the same mesh, and the
-    rigid-shift test for a constant potential field (no reference computation needed).
-  * Conditioning is **blind to the pollution** — the pathological pair is the
-    best-conditioned of the six. A healthy $\kappa$ certifies the linear algebra, not the
-    spectrum.
-
----
+| File | What it is |
+|:--|:--|
+| `spectral_common.py` | Criss-cross meshes, the shift-and-invert SLEPc solve, MUMPS/Hager condition estimates, rates, cross-formulation spread/digits, table formatting. |
+| `pseudospectra_partial_schur.py` | The $\varepsilon$-pseudospectrum engine: partial Schur basis, metric whitening, QZ, randomised $\sigma_{\min}$ sampling, interpolation, plotting. |
+| `domain_meshes.py` | The L-shape (uniform or corner-graded) and the re-entrant sector with an isoparametric rim, plus the exact sector spectrum and Dauge's L-shape benchmark. |
+| `annulus_mesh.py`, `torus_meshes.py` | The annulus (structured polar) and the flat torus. |
+| `unstructured_pi.msh` | The Gmsh mesh of $(0,\pi)^2$ used by Table A.9 (regenerated by the notebook if missing). |
+| `figures/` | The figure files as included in the thesis (`.eps`, with `.pdf` twins where available). Running a notebook rewrites the ones it produces into `./figures/`. |
+| `requirements.txt` | Exact package versions of the environment the results were produced in. |
 
 ## Running
 
-Needs Firedrake with SLEPc, MUMPS and (for the L-shape) Netgen, plus
-numpy/scipy/pandas/matplotlib.
+Install Firedrake with SLEPc, MUMPS and Netgen (see `requirements.txt` for the versions used), register its Python as a Jupyter kernel, open a notebook from this folder (the notebooks import the sibling modules by relative path) and run it top to bottom. Each notebook is self-contained; figures are written to `./figures/` and tables are displayed inline. The stored outputs are those of the runs behind the thesis.
 
-```bash
-python mhd_spectral_tutorial.py
-```
+Six of the seven notebooks were re-executed top to bottom in this environment on 9 September 2026 (Apple laptop, 8 cores, 16 GB, one thread); their stored outputs are from those runs, and the values they print were checked against the thesis tables. `03_beta_regularity.ipynb` keeps the outputs of the original runs behind the thesis; its top-to-bottom flow was checked with a copy in which only the resolution parameters were lowered. Wall-clock times:
 
-```bash
-python topform_spectral_benchmark.py
-```
+| Notebook | Runtime |
+|:--|:--|
+| `01_baseline_1forms.ipynb` | 6 min |
+| `02_topform_spectral_pollution.ipynb` | 23 min |
+| `03_beta_regularity.ipynb` | not re-run in full (about 3 h); a reduced-parameter copy (N = 16, p = 1, 40 eigenvalues, two refinement levels) runs top to bottom in about 30 min |
+| `04_domain_regularity_lshape.ipynb` | 9 min |
+| `05_domain_regularity_sector.ipynb` | 23 min |
+| `06_topological_zero_modes.ipynb` | 3 min |
+| `07_full_hodge.ipynb` | 1 min |
 
-or open either notebook with the Firedrake kernel. Each takes about a minute in serial.
+## Index of thesis figures and tables
 
-## Caveat carried by both
+Every code cell is a verbatim copy of a cell of the author's working notebooks; the cell numbers below refer to those notebooks and are also recorded in each cell's `metadata.final_final`. A `*` marks a **parameter re-run**: the same cell with one string or number literal changed, which is how the corresponding thesis item was originally produced (see *Notes*). Items that share their cells with another item point to it inside the notebook.
 
-Nothing is stabilised, deliberately — SUPG and its relatives perturb the operator whose
-spectrum is the object of study. Unstabilised Galerkin advection–diffusion is dependable
-only while the cell Péclet number $\mathrm{Pe}_h = h\|\beta\|_\infty R_m/2 \lesssim 1$,
-i.e. $N \gtrsim \pi R_m/2$ on $(0,\pi)^2$. Every figure respects that bound; running past
-it produces eigenvalues with negative real part that look like dynamo growth and are not.
+| Item | Notebook | Source cells | Figure files |
+|:--|:--|:--|:--|
+| Table 4.3: Baseline 1-form eigenvalues under β0 | `01_baseline_1forms.ipynb` | `baseline.ipynb` [7, 8] | table |
+| Figure 4.1: A(P_p) convergence under h- and p-refinement (β0) | `01_baseline_1forms.ipynb` | `baseline.ipynb` [10, 11, 12, 14, 16, 17] | `baseline_h_p1_ACG.eps`, `baseline_pref_ACG.eps` |
+| Figure 4.2: 1-form pseudospectra for β4: A(P1) vs. B(N1^I) | `01_baseline_1forms.ipynb` | `baseline.ipynb` [23, 25, 26, 27*] | `baseline_pseudo_b4_sidebyside.eps` |
+| Figure A.1: B(N_p^I) convergence under h- and p-refinement (β0) | `01_baseline_1forms.ipynb` | `baseline.ipynb` [18, 19] | `baseline_h_p1_BN1.eps`, `baseline_pref_BN1.eps` |
+| Figure A.2: B(N_p^II) convergence under h- and p-refinement (β0) | `01_baseline_1forms.ipynb` | `baseline.ipynb` [20, 21] | `baseline_h_p1_BN2.eps`, `baseline_pref_BN2.eps` |
+| Figure A.3: 1-form pseudospectra under β1 | `01_baseline_1forms.ipynb` | `baseline.ipynb` [27*] | `baseline_pseudo_b1_sidebyside.eps` |
+| Figure A.4: 1-form pseudospectra under β2 | `01_baseline_1forms.ipynb` | `baseline.ipynb` [27*] | `baseline_pseudo_b2_sidebyside.eps` |
+| Figure A.5: 1-form pseudospectra under β5 | `01_baseline_1forms.ipynb` | `baseline.ipynb` [27] | `baseline_pseudo_b5_sidebyside.eps` |
+| Table 4.4: Top-form eigenvalues with advection at Rm = 1 (β2) | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [83*] | table |
+| Figure 4.3: Convergence of the pathological B̃(P1) under β4 | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [144, 88] | `topform_spurious_convergence_b4.eps`, `topform_spurious_eigenfunctions_b4.eps` |
+| Figure 4.4: Top-form pseudospectra for β4: A(P1) vs. B̃(P1) | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [106, 108, 110] | `topform_pseudo_b4_sidebyside.eps` |
+| Figure 4.5: Genuine and spurious top-form eigenmodes under β4 | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [123, 124] | `topform_mode_b4_bdm_1.eps`, `topform_mode_b4_bdm_4.eps`, `topform_mode_b4_p1_spurious.eps` |
+| Table A.1: Top-form eigenvalues with advection at Rm = 1 (β4) | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [82*, 149, 151] | table |
+| Table A.2: First 15 of 100 computed top-form eigenvalues for β0 across six formulations | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [34*, 36] | table |
+| Table A.3: Top-form eigenvalues under β2 and β4 at Rm = 10 | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [82, 83] | table |
+| Table A.4: Top-form eigenvalues under β2 and β4 at Rm = 100 | `02_topform_spectral_pollution.ipynb` | `TopForm_Spectral_Benchmark.ipynb` [84, 85] | table |
+| Table 4.5: Exact eigenvalues for β6, β7, β8 at Rm = 1 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [16] | table |
+| Figure 4.6: A(P_p) convergence under β6 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] | `breg1_h_b6_AP.eps`, `breg1_p_b6_AP.eps` |
+| Figure 4.7: β7 pseudospectra across Rm ∈ {1, 10, 20} | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [32] | `breg1_ps_b7_2x3.eps` |
+| Figure 4.8: h-refinement for A(P1) under the L^q vortex β9 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [43, 44, 45] | `breg1_h_b9_a1p0_AP.eps`, `breg1_h_b9_a1p75_AP.eps` |
+| Figure 4.9: ε-pseudospectra for β9 ∈ L^q at Rm = 20 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [47*, 48*] | `vortex_ps_alpha_2x3_Rm20.eps` |
+| Table A.5: Exact eigenvalues for β6, β7, β8 at Rm = 5 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [11*] | table |
+| Table A.6: Formulation comparison for β6, β7, β8 at Rm = 5 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [8*, 9] | table |
+| Table A.7: Exact eigenvalues for β6, β7, β8 at Rm = 10 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [11] | table |
+| Table A.8: Formulation comparison for β6, β7, β8 at Rm = 10 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [10, 11] | table |
+| Table A.9: Formulation comparison on an unstructured mesh at Rm = 10 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [12, 13, 14] | table |
+| Figure A.6: h-refinement across formulations for β6, β7, β8 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] | `breg1_h_b6_AP.eps`, `breg1_h_b6_BN1.eps`, `breg1_h_b6_BN2.eps`, `breg1_h_b7_AP.eps`, `breg1_h_b7_BN1.eps`, `breg1_h_b7_BN2.eps`, `breg1_h_b8_AP.eps`, `breg1_h_b8_BN1.eps`, `breg1_h_b8_BN2.eps` |
+| Figure A.7: p-refinement across formulations for β6, β7, β8 | `03_beta_regularity.ipynb` | `appendix_beta_regularity_1form-Copy1.ipynb` [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30] | `breg1_p_b6_AP.eps`, `breg1_p_b6_BN1.eps`, `breg1_p_b6_BN2.eps`, `breg1_p_b7_AP.eps`, `breg1_p_b7_BN1.eps`, `breg1_p_b7_BN2.eps`, `breg1_p_b8_AP.eps`, `breg1_p_b8_BN1.eps`, `breg1_p_b8_BN2.eps` |
+| Table A.10: Cross-formulation reference spectra for the L^q fields | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [43, 44, 45] | table |
+| Table A.11: Formulation comparison for β6, β7, β8 at Rm = 1 | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [8, 9] | table |
+| Figure A.8: h-refinement across formulations for the L^q fields | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [43, 44, 45] | `breg1_h_b9_a1p0_AP.eps`, `breg1_h_b9_a1p0_BN1.eps`, `breg1_h_b9_a1p0_BN2.eps`, `breg1_h_b9_a1p25_AP.eps`, `breg1_h_b9_a1p25_BN1.eps`, `breg1_h_b9_a1p25_BN2.eps`, `breg1_h_b9_a1p5_AP.eps`, `breg1_h_b9_a1p5_BN1.eps`, `breg1_h_b9_a1p5_BN2.eps`, `breg1_h_b9_a1p75_AP.eps`, `breg1_h_b9_a1p75_BN1.eps`, `breg1_h_b9_a1p75_BN2.eps`, `breg1_h_b11_AP.eps`, `breg1_h_b11_BN1.eps`, `breg1_h_b11_BN2.eps` |
+| Figure A.9: p-refinement across formulations for the L^q fields | `03_beta_regularity.ipynb` | `beta_regularity_1form.ipynb` [46] | `breg1_p_b9_a1p0_AP.eps`, `breg1_p_b9_a1p0_BN1.eps`, `breg1_p_b9_a1p0_BN2.eps`, `breg1_p_b9_a1p25_AP.eps`, `breg1_p_b9_a1p25_BN1.eps`, `breg1_p_b9_a1p25_BN2.eps`, `breg1_p_b9_a1p5_AP.eps`, `breg1_p_b9_a1p5_BN1.eps`, `breg1_p_b9_a1p5_BN2.eps`, `breg1_p_b9_a1p75_AP.eps`, `breg1_p_b9_a1p75_BN1.eps`, `breg1_p_b9_a1p75_BN2.eps`, `breg1_p_b11_AP.eps`, `breg1_p_b11_BN1.eps`, `breg1_p_b11_BN2.eps` |
+| Table 4.6: L-shape eigenvalues without advection | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [10] | table |
+| Figure 4.10: L-shape eigenvalue errors under h- and p-refinement (β = 0) | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [11, 12, 13, 14, 15, 16] | `domreg_h_b0_AP.eps`, `domreg_p_b0_AP.eps` |
+| Figure 4.11: Example L-shape eigenfunctions from B(N1^I) | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [17, 18] | `domreg_mode_smooth.eps`, `domreg_mode_corner.eps` |
+| Figure 4.12: Mesh grading and the convergence of the singular eigenvalue λ1 | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [20, 21*, 22, 23] | `domreg_graded_mesh_g05.eps`, `domreg_graded_h_AP.eps` |
+| Figure 4.13: L-shape h-refinement errors under β1 and β4 | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [26, 27, 28, 29] | `domreg_h_b1_AP.eps`, `domreg_h_b4_AP.eps` |
+| Figure 4.14: L-shape ε-pseudospectra for β4 and β7 | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [31, 32, 33] | `pseudosptrab4b7.eps` |
+| Table A.12: L-shape formulation comparison for β1, β2, β4 | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [26, 27, 28, 29] | table |
+| Figure A.10: L-shape h-refinement across formulations for β1, β2, β4 | `04_domain_regularity_lshape.ipynb` | `domain_regularity_lshape.ipynb` [26, 27, 28, 29] | `domreg_h_b1_AP.eps`, `domreg_h_b1_BN1.eps`, `domreg_h_b1_BN2.eps`, `domreg_h_b2_AP.eps`, `domreg_h_b2_BN1.eps`, `domreg_h_b2_BN2.eps`, `domreg_h_b4_AP.eps`, `domreg_h_b4_BN1.eps`, `domreg_h_b4_BN2.eps` |
+| Figure 4.15: Eigenvalue convergence on Ω_s(15°) under β1 | `05_domain_regularity_sector.ipynb` | `domain_regularity_pacman.ipynb` [17, 18, 20, 21] | `pacman_h_b1_BN2_d15.eps`, `pacman_p_b1_BN2_d15.eps` |
+| Figure A.11: Unstructured meshes for the re-entrant sector Ω_s(δ) | `05_domain_regularity_sector.ipynb` | `domain_regularity_pacman.ipynb` [10] | `pacman_mesh_level_0.eps`, `pacman_closing_15deg_level_2.eps` |
+| Table A.13: Reference spectrum for β1 on Ω_s(δ) | `05_domain_regularity_sector.ipynb` | `domain_regularity_pacman.ipynb` [15] | table |
+| Table A.14: Reference spectrum for β2 on Ω_s(δ) | `05_domain_regularity_sector.ipynb` | `domain_regularity_pacman.ipynb` [15] | table |
+| Table A.15: Reference spectrum for β4 on Ω_s(δ) | `05_domain_regularity_sector.ipynb` | `domain_regularity_pacman.ipynb` [15] | table |
+| Table 4.7: Computed zero-mode multiplicity across topological domains | `06_topological_zero_modes.ipynb` | `topological_zero_modes.ipynb` [21, 22, 29, 30] | table |
+| Figure A.12: Meshes for the annulus and the flat torus | `06_topological_zero_modes.ipynb` | `topological_zero_modes.ipynb` [5] | `topo_mesh_annulus.eps`, `topo_mesh_torus.eps` |
+| Table 4.8: Full-Hodge eigenvalues on (0,π)² at Rm = 1 | `07_full_hodge.ipynb` | `full_hodge_beta_regularity.ipynb` [12] | table |
+| Table 4.9: Half- versus full-Hodge spectra for β2 and β3 | `07_full_hodge.ipynb` | `full_hodge_beta_regularity.ipynb` [14] | table |
+
+## Notes
+
+**Parameter re-runs.** A few thesis items were produced by running an existing cell again with one literal changed. The notebooks keep the cell as saved and add the re-run as a separate cell, marked in its heading and stamped `param_rerun` in the cell metadata; the checker allows nothing but string/number literals to differ.
+
+- `01`: the side-by-side pseudospectrum cell (saved for $\beta_5$, Figure A.5) is re-run with the wind key, the panel titles and the file name changed to produce Figure 4.2 ($\beta_4$), Figure A.3 ($\beta_1$) and Figure A.4 ($\beta_2$).
+- `02`: the $N = 64$, $p = 3$ top-form table cells (saved at $R_m = 10$, Table A.3) are re-run at $R_m = 1$ for Tables 4.4 and A.1, and the $\beta_0$ solve (saved at $p = 3$) is re-run at $p = 1$ for Table A.2. The re-runs reproduce the thesis numbers digit for digit.
+- `03`: the exact-spectrum cell (saved at $R_m = 10$, Table A.7) is re-run at $R_m = 5$ for Table A.5, and the reference solve (saved at $R_m = 1$, Table A.11) at $R_m = 5$ for Table A.6. For Figure 4.9 the formulation key `"B(N^I)"` is changed to `"B(N2)"`: the saved cell crashes in LaTeX on that raw label, and the key already selected the $\mathcal{N}^{\mathrm{II}}$ pencil, so no number changes (see the caveat below).
+- `04`: the mesh panel of Figure 4.12(a) is drawn with `gamma=0.5` instead of the saved `gamma=1`; the saved cell had produced a uniform mesh under the graded-mesh file name, while the thesis figure and caption are the graded mesh.
+
+**Where the code and the thesis captions disagree.** These were found while assembling the folder and are recorded, not fixed; the notebooks are the code as it was run and their outputs are the thesis numbers.
+
+- Table 4.3: the thesis prints the eigenvalues with one decimal fewer than the output (a transcription slip); DoF and condition numbers agree exactly.
+- Table A.2: the caption says $p = 3$; the numbers are the $p = 1$ run. Tables A.3 and A.4: the captions say 1-forms; the runs are top forms.
+- Figure 4.3: the caption's mesh sequence is $N \in \{4, 8, 16, 24, 32\}$; the code uses $N \in \{8, 12, 16, 24, 32, 40\}$, with an unshifted $B(\mathrm{BDM}_2)$ reference for the eigenfunction gaps. Figure 4.4: the caption says 60 eigenvalues; the code uses 200.
+- Figure 4.7: the caption says 300 eigenvalues; the run used 200 (the `run_ps` default bound before `PS_NEV` was raised). Figure 4.9: the caption says 20 eigenvalues and $\tau = 0.9$; the run used 200 and $\tau = 0.9/R_m$, and its row (b) is the $B(\mathcal{N}^{\mathrm{II}}_3)$ discretisation although labelled $B(\mathcal{N}^{\mathrm{I}}_3)$.
+- Tables A.6, A.8, A.9: the captions say $\tau = 0.9$; the solves use $\tau = 0.9/R_m$. Table A.10: the thesis prints $5.11\times10^{6}$ for one condition number that the output gives as $5.11\times10^{5}$.
+- Table 4.6: the condition-number row of the thesis is the $p = 1$ MUMPS estimate from the $h$-study, while the eigenvalues are the $p = 2$ solve; the caption says 40 eigenvalues where the solve requests 30.
+- Figure 4.11: the sub-captions are swapped relative to the files, `domreg_mode_corner` is the $\lambda_1$ mode and `domreg_mode_smooth` the $\lambda_4$ mode. Table A.12: the caption strings inside the code say $\gamma = 1/2$, the run (and the thesis table caption) is uniform, $\gamma = 1$.
+- Figure A.11: the two thesis panels come from an older mesh generator that is not in this folder (192 cells at $\delta = 90^\circ$); the notebook draws its own hierarchy (98 cells at level 0, same $h_{\max} = 0.30$). Figure 4.15: the caption says 100 eigenvalues; the studies request 50 (100 is the reference solve).
+- Table 4.7: the caption says 8 eigenvalues and a threshold of $10^{-8}$; the code keeps 5 of 30 and counts $|\lambda| < 10^{-6}/R_m$, so the torus $\beta_3$ count of 5 is capped by the number kept and the annulus $\beta_2$, $R_m = 30$ entry has $|\lambda_2| = 1.5\times10^{-8}$.
+- Tables 4.8 and 4.9: the condition numbers are the MUMPS componentwise estimate; the half-versus-full cell also computes $B(\mathcal{N}^{\mathrm{II}}_1)$, which the thesis omits.
+- Several cells carry stale caption strings from earlier runs (for example "$R_m = 1$" in cells that run at $R_m = 10$); they are left as they were.
+
+**Not included.** The working folder also holds a cell-Péclet study, a three-dimensional proof of concept, a top-form $\beta$-regularity study, a full-Hodge torus study, the Pac-Man eigenfunction-gap and pseudospectrum sweeps and two tutorials; none of them is used by a thesis figure or table.

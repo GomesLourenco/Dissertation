@@ -1,52 +1,116 @@
-r"""$\varepsilon$-pseudospectra of generalised matrix pencils by partial Schur projection.
+r"""$\varepsilon$-pseudospectra of finite element operators by partial Schur projection.
 
-For a pencil $(A, M)$ coming from a mixed finite element discretisation the
-$\varepsilon$-pseudospectrum is taken in the van Dorsselaer / Frayssé sense,
+A mixed finite element discretisation produces a pencil $(A, M)$ with $M$ singular,
+but the object of interest is not the pencil: it is the discrete operator
 
 .. math::
 
-    \sigma_\varepsilon(A, M)
-      = \{\, z \in \mathbb{C} : \|(zM - A)^{-1}\|_2 \ge \varepsilon^{-1} \,\}
-      = \{\, z \in \mathbb{C} : \sigma_{\min}(zM - A) \le \varepsilon \,\},
+    L_h = M^{-1}A : V_h \to V_h ,
 
-so the level sets of :math:`z \mapsto \sigma_{\min}(zM-A)` draw every
-:math:`\varepsilon`-pseudospectrum at once.  For a *normal* operator they are exact discs
-of radius :math:`\varepsilon` about the eigenvalues; the amount by which they bulge beyond
+and the norm in which a perturbation of it is measured has to be the norm of the
+*function space*, not the Euclidean norm of the coefficient vector.  Fixing a
+symmetric positive (semi-)definite metric $W$ -- a mass or a stiffness matrix --
+gives the inner product $\langle x, y\rangle_W = y^*Wx$ that reproduces the
+continuous one, and the $\varepsilon$-pseudospectrum in the sense of
+Trefethen--Embree is
+
+.. math::
+
+    \sigma_\varepsilon(L_h)
+      = \{\, z \in \mathbb{C} : \|(z - L_h)^{-1}\|_W \ge \varepsilon^{-1} \,\}
+      = \{\, z \in \mathbb{C} : \mathcal{R}_W(z) \le \varepsilon \,\},
+    \qquad
+    \mathcal{R}_W(z) = \|(z - L_h)^{-1}\|_W^{-1},
+
+so the level sets of $z \mapsto \mathcal{R}_W(z)$ draw every $\varepsilon$-pseudospectrum
+at once.  For an operator that is normal *in the $W$ inner product* they are exact discs
+of radius $\varepsilon$ about the eigenvalues; the amount by which they bulge beyond
 those discs measures the non-normality.
 
-Evaluating :math:`\sigma_{\min}` directly is a dense SVD of an :math:`N \times N` matrix at
-every point, hopeless for :math:`N \sim 10^4`.  The six steps below reduce it to an SVD of
-an :math:`m \times m` *triangular* pencil with :math:`m \sim 10^2`:
+Why the weight is not optional
+------------------------------
+With $W = I$ the quantity degenerates to $\sigma_{\min}(zM - A)$ in the Euclidean norm,
+which measures *coefficient vectors*.  Those inherit the $O(h^{d})$ scaling of the mass
+matrix and the dimension of the space, so the same physical perturbation registers as a
+different number in two discretisations of the same operator -- a formulation with fewer
+degrees of freedom reports systematically smaller $\sigma_{\min}$, and panels drawn side
+by side separate into contour bands that are an artefact of the mesh rather than of the
+physics.  Whitening against $W$ removes that scaling entirely: $\mathcal{R}_W$ has the
+units of $z$, is mesh-independent as $h \to 0$, and is comparable across formulations.
 
-===== ====================================================== ==========================
-Step  Object                                                 Tool
-===== ====================================================== ==========================
-1     saddle-point pencil :math:`(A, M)`, :math:`M` singular  caller (e.g. Firedrake)
-2     reciprocal shift-and-invert about :math:`\tau`          SLEPc ``EPS`` + ``ST``
-3     orthonormal basis :math:`Q`; :math:`A_m = Q^*AQ`        column-pivoted QR
-4     generalised Schur :math:`A_m = WSV^*`, :math:`M_m=WTV^*` ``scipy.linalg.qz``
-5     :math:`\mathcal{R}(z) = \sigma_{\min}(S - zT)`, random z ``scipy.linalg.svdvals``
-6     scatter :math:`\to` grid, contour by decade             ``scipy.interpolate``
-===== ====================================================== ==========================
+Choosing $W$
+------------
+$W$ must be the Gram matrix of the norm in which the *physical field* is measured.
 
-Because :math:`W` and :math:`V` are unitary,
-:math:`\sigma_{\min}(S - zT) = \sigma_{\min}(A_m - zM_m)` exactly; the QZ factorisation is
-computed once and each sample costs one small triangular SVD.
+* **Mixed formulations** that carry the field itself (the $B$ formulations of the
+  $1$-form study, the total-flux formulations of the top-form study) already assemble
+  that Gram matrix: it is $M$.  Its zero block on the multiplier costs nothing, because
+  the constraint forces the multiplier to vanish on the eigenvectors, so $M$ restricted
+  to the computed subspace is exactly the $L^2$ metric.  This is the default,
+  ``metric="mass"``, and it needs no extra assembly.
+* **Potential formulations** compute $A$ with $B = \operatorname{curl}A$, so
+  $\|A\|_{L^2}$ is not the quantity the $B$ formulations measure.  In two dimensions
+  $|\operatorname{curl}A| = |\nabla A|$ pointwise, so the stiffness matrix -- the $H^1$
+  seminorm -- makes the two agree: $\nabla^{\perp}$ is an isometry from
+  $(\{\int A = 0\}, |\cdot|_{H^1})$ onto $(\{\operatorname{div}B = 0\}, \|\cdot\|_{L^2})$
+  and it intertwines the two operators exactly, so the two pseudospectra coincide in the
+  continuum and differ only by discretisation error.  Pass that stiffness matrix as
+  ``metric=``.
 
-The module is deliberately **finite-element agnostic**: it takes assembled
-``PETSc.Mat`` objects and knows nothing about the formulation that produced them, so the
-same code serves the 1-form and the top-form studies.
+Reducing it to something computable
+-----------------------------------
+Evaluating $\mathcal{R}_W$ directly is a dense SVD of an $N \times N$ matrix at every
+point, hopeless for $N \sim 10^4$.  The steps below reduce it to an SVD of an
+$m \times m$ *triangular* matrix with $m \sim 10^2$:
+
+===== ======================================================= ==========================
+Step  Object                                                  Tool
+===== ======================================================= ==========================
+1     saddle-point pencil $(A, M)$, $M$ singular              caller (e.g. Firedrake)
+2     reciprocal shift-and-invert about $\tau$                SLEPc ``EPS`` + ``ST``
+3     orthonormal basis $Q$; $A_m = Q^*AQ$, $M_m = Q^*MQ$     column-pivoted QR
+3b    $G = Q^*WQ = R^*R$; whiten $\to A_w, M_w$               Cholesky (``eigh`` fallback)
+4     generalised Schur $A_w = USV^*$, $M_w = UTV^*$          ``scipy.linalg.qz``
+4b    $C = T^{-1}S$, the operator in triangular form          triangular solve
+5     $\mathcal{R}_W(z) = \sigma_{\min}(C - zI)$, random $z$  ``scipy.linalg.svdvals``
+6     scatter $\to$ grid, contour by decade                   ``scipy.interpolate``
+===== ======================================================= ==========================
+
+The order of steps 3 and 3b is the whole trick.  Eigenvectors of a strongly non-normal
+operator are close to linearly dependent, and a weighted Gram matrix built directly on
+them is numerically indefinite: the Cholesky factorisation fails outright.  Taking the
+column-pivoted QR *first* extracts a stable rank-truncated basis, and $G = Q^*WQ$ is then
+a small, well-conditioned $m \times m$ matrix that factorises cleanly.  Cholesky is used
+where it succeeds and a truncated symmetric eigendecomposition where it does not, so a
+badly conditioned metric degrades the rank rather than raising.
+
+With $X$ the whitening factor ($X^*GX = I$) and $Z = QX$ the resulting $W$-orthonormal
+basis, $C = T^{-1}S$ is unitarily similar to $X^{-1}(M_m^{-1}A_m)X$, the matrix of $L_h$
+restricted to the computed invariant subspace written in the $Z$ basis.  Hence
+$\sigma_{\min}(C - zI) = \mathcal{R}_W(z)$ for the restriction, exactly.
+
+The module is deliberately **finite-element agnostic**: it takes assembled ``PETSc.Mat``
+objects and knows nothing about the formulation that produced them, so the same code
+serves the $1$-form and the top-form studies.
 
 Typical use::
 
     from pseudospectra_partial_schur import pseudospectrum, plot_pseudospectrum
 
+    # mixed formulation: its own mass matrix is the L^2 metric
     result = pseudospectrum(A, M, tau=0.9, nev=50, label=r"$\beta_4$")
+
+    # potential formulation: measure |A|_{H^1} = ||curl A||_{L^2} instead
+    K = assemble(inner(grad(u), grad(v)) * dx).petscmat
+    result = pseudospectrum(A, M, tau=0.9, nev=50, metric=K)
+
     plot_pseudospectrum(result)
 
 Method and implementation follow ``Lshape_Pseudospectra_Partial_Schur.ipynb``.
 """
 from __future__ import annotations
+
+import itertools
 
 import numpy as np
 import pandas as pd
@@ -60,18 +124,30 @@ from petsc4py import PETSc
 from slepc4py import SLEPc
 
 __all__ = ["pseudospectrum", "plot_pseudospectrum", "diagnostics_frame",
-           "partial_schur_basis", "qz_pencil", "resolvent_samples",
-           "interpolate_to_grid", "bounding_box", "decade_levels",
-           "COMPLEX_PETSC"]
+           "partial_schur_basis", "metric_gram", "whitening_factor",
+           "qz_pencil", "operator_form", "resolvent_samples", "resolvent_at",
+           "bulge", "interpolate_to_grid", "bounding_box", "decade_levels",
+           "resolve_levels", "shared_scale", "COMPLEX_PETSC"]
 
 #: PETSc built with real scalars returns a complex eigenvector as a pair of real
 #: vectors; every routine here handles both builds.
 COMPLEX_PETSC = np.issubdtype(PETSc.ScalarType, np.complexfloating)
 
+#: One options-database prefix per eigensolve; see :func:`partial_schur_basis`.
+_prefix = itertools.count()
+
+#: ``metric`` values that mean "use the pencil's own mass matrix".
+_MASS = (None, "mass", "M")
+
+#: ``metric`` values that mean "no weighting at all" -- the Euclidean norm of the
+#: coefficient vector.  Kept only to reproduce a pre-weighting figure; the
+#: resulting levels are not comparable between formulations.
+_NONE = (False, "none", "euclidean")
+
 
 # --------------------------------------------------------------------- step 2-3
 def partial_schur_basis(A, M, tau, nev, tol=1e-10, max_it=5000,
-                        finite_tol=1e8, rank_rtol=1e-12):
+                        finite_tol=1e8, rank_rtol=1e-12, icntl14=800):
     r"""Shift-and-invert solve, then an orthonormal basis of the invariant subspace.
 
     Parameters
@@ -84,6 +160,11 @@ def partial_schur_basis(A, M, tau, nev, tol=1e-10, max_it=5000,
         so ``tau`` must sit where the plotting window will be.
     nev : int
         Number of eigenpairs requested.
+    rank_rtol : float
+        Relative threshold on the pivoted-QR diagonal below which a column is
+        dropped as linearly dependent on the ones before it.
+    icntl14 : int
+        MUMPS working-space headroom, as a percentage; see the note in the body.
 
     Returns
     -------
@@ -99,14 +180,19 @@ def partial_schur_basis(A, M, tau, nev, tol=1e-10, max_it=5000,
     ``EPS_STATE_EIGENVECTORS`` state, after which that call raises.  The basis is
     rebuilt from the converged eigenvectors instead, which is not an
     approximation -- :math:`\{\operatorname{Re}v_i, \operatorname{Im}v_i\}` spans
-    exactly the same subspace, and :math:`\sigma_{\min}` is invariant under the
-    unitary change of basis between the two.
+    exactly the same subspace, and the pseudospectrum is invariant under the
+    change of basis between the two.
 
     The column-pivoted QR is essential rather than cosmetic: eigenvectors of a
-    strongly non-normal operator are close to linearly dependent, and the rank
-    truncation is what stops that near-dependence contaminating ``Q``.
+    strongly non-normal operator are close to linearly dependent, the rank
+    truncation is what stops that near-dependence contaminating ``Q``, and it is
+    what makes the weighted Gram matrix of :func:`metric_gram` factorisable.
     """
     solver = SLEPc.EPS().create(comm=A.getComm())
+    # A private prefix per solve, so that the one option set below cannot leak
+    # into any other eigensolver in the session.
+    prefix = f"psps{next(_prefix)}_"
+    solver.setOptionsPrefix(prefix)
     solver.setOperators(A, M)
     # GNHEP: even with no advection the saddle-point pencil is not a definite
     # pair, because M is singular on the multiplier block.
@@ -127,7 +213,19 @@ def partial_schur_basis(A, M, tau, nev, tol=1e-10, max_it=5000,
     # magnitude rather than nearest tau.
     solver.setTarget(tau)
     solver.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_MAGNITUDE)
+
+    # ICNTL(14) is percentage headroom in the MUMPS working space.  The default
+    # 20% is not enough for these saddle points once the mesh is refined -- the
+    # factorisation stops with INFOG(1) = -9 -- and 800 is what every other solve
+    # in this project uses.  It has to go through the options database: the
+    # factor Mat it applies to does not exist until STSetUp, which is also when
+    # the factorisation happens, so there is no moment in between at which
+    # ``setMumpsIcntl`` could be called on it.
+    db = PETSc.Options()
+    db[prefix + "st_mat_mumps_icntl_14"] = icntl14
+    solver.setFromOptions()
     solver.solve()
+    db.delValue(prefix + "st_mat_mumps_icntl_14")
 
     lam, cols = [], []
     vr, vi = A.createVecRight(), A.createVecRight()
@@ -173,23 +271,123 @@ def _apply(mat, dense):
     return out
 
 
+# --------------------------------------------------------------------- step 3b
+def metric_gram(metric, Q):
+    r"""The Gram matrix :math:`G = Q^*WQ` of the physical metric on the subspace.
+
+    Parameters
+    ----------
+    metric : PETSc.Mat
+        Symmetric positive semi-definite :math:`W`.  It may be *smaller* than the
+        pencil, in which case it is applied to the leading block of ``Q`` and the
+        trailing rows carry no weight.  That is exactly what a bordered
+        multiplier needs: a potential formulation gauged by a rank-one border can
+        hand over the plain stiffness matrix of the potential space, with no
+        padding, because the border direction contributes nothing to the physical
+        norm anyway.
+    Q : ndarray, shape (N, m)
+        The orthonormal basis from :func:`partial_schur_basis`.
+
+    Returns
+    -------
+    ndarray, shape (m, m)
+        Explicitly symmetrised, since only the symmetric part is meaningful and
+        the asymmetry left by the two matrix products is pure round-off.
+    """
+    n = metric.getSize()[0]
+    if n > Q.shape[0]:
+        raise ValueError(f"metric is {n}x{n}, larger than the pencil "
+                         f"({Q.shape[0]}); it must match or be a leading block")
+    block = Q if n == Q.shape[0] else np.ascontiguousarray(Q[:n])
+    G = block.conj().T @ _apply(metric, block)
+    return 0.5 * (G + G.conj().T)
+
+
+def whitening_factor(G, rtol=1e-12):
+    r"""``X`` with :math:`X^*GX = I`: the change of basis to a $W$-orthonormal frame.
+
+    Cholesky where the Gram matrix is safely definite, and a truncated symmetric
+    eigendecomposition where it is not.
+
+    The fallback matters because $W$ is singular on every formulation here: it
+    weights the physical field and nothing else, so a multiplier, a gauge border
+    or the flux block of a mixed system contributes zero to it.  ``G`` is
+    nonetheless positive definite in exact arithmetic -- a vector of the subspace
+    on which it vanished would be an eigenvector carrying no field at all, which
+    none of these pencils admits -- but the margin can be thin, and a poorly
+    converged eigenpair leaves enough unweighted content behind to tip it.
+    Dropping those directions costs a little of the subspace and keeps the rest
+    exact, which is much better than failing.
+
+    Returns
+    -------
+    X : ndarray, shape (m, k), ``k <= m``
+    info : dict
+        ``metric cond`` (of ``G`` as handed in), ``whitening`` (which branch ran)
+        and ``metric rank`` -- all carried into the result and reported by
+        :func:`diagnostics_frame`, so a silent truncation is impossible.
+    """
+    w = np.linalg.eigvalsh(G)
+    cond = float(w[-1] / w[0]) if w[0] > 0 else np.inf
+    if w[0] > rtol * w[-1]:
+        R = sla.cholesky(G, lower=False)                      # G = R^* R
+        X = sla.solve_triangular(R, np.eye(G.shape[0], dtype=G.dtype), lower=False)
+        return X, {"metric cond": cond, "whitening": "cholesky",
+                   "metric rank": G.shape[0]}
+
+    w, U = np.linalg.eigh(G)
+    keep = w > rtol * w[-1]
+    if not keep.any():
+        raise RuntimeError("the metric vanishes on the computed subspace: "
+                           "either W is the wrong matrix or the eigenvectors "
+                           "live entirely in its null space")
+    X = U[:, keep] / np.sqrt(w[keep])
+    return X, {"metric cond": cond, "whitening": "eigh",
+               "metric rank": int(keep.sum())}
+
+
 # ----------------------------------------------------------------------- step 4
 def qz_pencil(A_m, M_m, inf_rtol=1e-10):
     r"""Generalised Schur factorisation of the projected pencil.
 
-    Returns ``(S, T, ritz, residual)`` with :math:`A_m = WSV^*`,
-    :math:`M_m = WTV^*`, both triangular, and the finite Ritz values
+    Returns ``(S, T, ritz, residual)`` with :math:`A_m = USV^*`,
+    :math:`M_m = UTV^*`, both triangular, and the finite Ritz values
     :math:`S_{ii}/T_{ii}`.  ``output="complex"`` forces a true triangular form
     rather than the real quasi-triangular one with 2x2 blocks.
     """
-    S, T, W, V = sla.qz(A_m, M_m, output="complex")
-    residual = max(np.abs(W @ S @ V.conj().T - A_m).max(),
-                   np.abs(W @ T @ V.conj().T - M_m).max())
+    S, T, U, V = sla.qz(A_m, M_m, output="complex")
+    residual = max(np.abs(U @ S @ V.conj().T - A_m).max(),
+                   np.abs(U @ T @ V.conj().T - M_m).max())
     dS, dT = np.diag(S), np.diag(T)
     # T_ii ~ 0 marks an eigenvalue at infinity; with sinvert none should survive
     # into the subspace, but the test is free and makes it visible.
     finite = np.abs(dT) > inf_rtol * np.abs(dT).max()
     return S, T, dS[finite] / dT[finite], residual
+
+
+# ---------------------------------------------------------------------- step 4b
+def operator_form(S, T, rcond=1e-10):
+    r"""Turn the triangular pencil into the triangular *operator* :math:`C = T^{-1}S`.
+
+    The pencil and the operator do not have the same pseudospectrum unless
+    :math:`M_w = I`.  What the physics asks for is the resolvent of
+    :math:`L_h = M^{-1}A`, so the mass has to be divided out:
+    :math:`(z - L_h)^{-1} = (zM - A)^{-1}M`, whence
+    :math:`\mathcal{R}_W(z) = \sigma_{\min}(zI - T^{-1}S)`.  When the metric *is*
+    the mass matrix, $T$ comes back as the identity up to round-off and this step
+    is a no-op -- which is the sense in which the mixed formulations get the fix
+    for free.
+
+    ``T`` is triangular, so the solve is $O(m^3/3)$ once and the product stays
+    triangular; every later sample is still one small triangular SVD.
+    """
+    d = np.abs(np.diag(T))
+    if d.min() <= rcond * d.max():
+        raise RuntimeError("the whitened mass matrix is singular on the computed "
+                           "subspace, so the operator M^{-1}A does not exist "
+                           "there; check that the metric matches the pencil")
+    C = np.triu(sla.solve_triangular(T, S, lower=False))
+    return C, np.eye(C.shape[0], dtype=C.dtype), float(d.max() / d.min())
 
 
 # --------------------------------------------------------------------- step 5-6
@@ -204,6 +402,19 @@ def resolvent_samples(S, T, real_range, imag_range, n_points=2000, seed=0):
     rng = np.random.default_rng(seed)
     z = rng.uniform(*real_range, n_points) + 1j * rng.uniform(*imag_range, n_points)
     return z, np.array([sla.svdvals(S - zk * T)[-1] for zk in z])
+
+
+def resolvent_at(result, z):
+    r"""$\mathcal{R}_W$ at an arbitrary point, from an already-computed result.
+
+    The triangular pair is kept in the result, so probing extra points -- at a
+    Ritz value, at a distance from one -- costs one small SVD each and needs no
+    re-solve.  Accepts a scalar or an array and returns the same shape.
+    """
+    z = np.asarray(z, dtype=complex)
+    S, T = result["S"], result["T"]
+    out = np.array([float(sla.svdvals(S - zk * T)[-1]) for zk in z.ravel()])
+    return out.reshape(z.shape) if z.ndim else float(out[0])
 
 
 def interpolate_to_grid(z, sigma, real_range, imag_range, res=260):
@@ -242,8 +453,23 @@ def bounding_box(ritz, tau, n_box=8, pad_frac=0.15):
 
 
 # ------------------------------------------------------------------ the driver
+def _resolve_metric(metric, M):
+    """``(W, name)`` from the user-facing ``metric`` argument."""
+    if isinstance(metric, PETSc.Mat):
+        return metric, "custom"
+    if isinstance(metric, np.ndarray):
+        raise TypeError("metric must be an assembled PETSc.Mat, not a dense array")
+    if metric in _MASS:
+        return M, "mass"
+    if metric in _NONE:
+        return None, "none"
+    raise ValueError(f"unknown metric {metric!r}; expected a PETSc.Mat, "
+                     f"one of {_MASS} or one of {_NONE}")
+
+
 def pseudospectrum(A, M, tau, nev=50, n_points=2000, res=260, n_box=8,
-                   window=None, seed=0, label=None, **meta):
+                   window=None, seed=0, label=None, metric="mass",
+                   rank_rtol=1e-12, metric_rtol=1e-12, **meta):
     r"""Steps 1--6 for one assembled pencil.  This is the entry point.
 
     Parameters
@@ -254,13 +480,31 @@ def pseudospectrum(A, M, tau, nev=50, n_points=2000, res=260, n_box=8,
         Shift-and-invert target; also the centre of the default window.
     nev : int
         Eigenpairs requested.  Larger gives a tighter inner approximation of
-        :math:`\sigma_{\min}` but a looser one-sided projection at the outer
+        :math:`\mathcal{R}_W` but a looser one-sided projection at the outer
         edge -- see ``win_err`` in the result.
+    metric : PETSc.Mat or {"mass", "none"}, default "mass"
+        The Gram matrix $W$ of the norm in which a perturbation is measured; see
+        the module docstring for how to choose it.  ``"mass"`` uses the pencil's
+        own $M$, which is the right answer whenever the pencil's primary unknown
+        *is* the physical field -- every mixed formulation here.  A potential
+        formulation should pass its stiffness matrix instead, so that the
+        perturbation is measured as $|A|_{H^1} = \|\operatorname{curl}A\|_{L^2}$
+        and the levels line up with the mixed formulations'.  The matrix may be a
+        leading block of the pencil, which is what lets a gauged formulation hand
+        over the unbordered stiffness matrix directly.  ``None`` is an alias for
+        ``"mass"``, so a per-formulation helper can return ``None`` for the
+        formulations that need nothing special.  ``"none"`` disables the
+        weighting and recovers the raw Euclidean $\sigma_{\min}(zM-A)$; it is
+        kept only for reproducing an unweighted figure, and its levels are *not*
+        comparable between formulations.
     window : ((lo, hi), (lo, hi)), optional
         Explicit plotting window; by default one is chosen around the ``n_box``
         Ritz values nearest ``tau``.
     label : str, optional
         Free-form label carried through to the plot title.
+    rank_rtol, metric_rtol : float
+        Relative truncation tolerances for the pivoted QR of the eigenvectors and
+        for the whitening of the metric Gram matrix.
     **meta
         Any further keys to carry into the result dict (formulation name, wind,
         :math:`R_m`, ...); they are ignored here and available downstream.
@@ -268,26 +512,47 @@ def pseudospectrum(A, M, tau, nev=50, n_points=2000, res=260, n_box=8,
     Returns
     -------
     dict
-        Everything needed to plot and to audit: ``ritz``, ``ritz_in`` (those
-        inside the window), ``field`` on the grid ``X, Y``, the triangular pair
-        ``S, T``, and the diagnostics ``qz_resid``, ``win_err``, ``hole``.
+        Everything needed to plot and to audit: ``eigenvalues`` and ``eigs_in``
+        (the pencil's own spectrum, all of it and the part inside the window --
+        this is what :func:`plot_pseudospectrum` marks), ``ritz`` and
+        ``ritz_in`` (the projected system's counterparts, retained for the
+        ``win_err`` comparison), ``field`` on the grid ``X, Y``, the triangular pair
+        ``S, T`` that the samples were taken from -- ``(C, I)`` when weighted,
+        so that ``svdvals(S - z T)`` reads the same either way -- and the
+        diagnostics ``qz_resid``, ``win_err``, ``hole``, ``metric cond``,
+        ``whitening``, ``metric rank`` and ``pencil cond``.
 
     Notes
     -----
     The projection is a **one-sided inner** approximation:
-    :math:`\sigma_{\min}(S-zT) \ge \sigma_{\min}(zM-A)` pointwise, with equality
-    as :math:`m \to N`.  Contours therefore move inward as ``nev`` grows, and a
-    feature that matters should be checked for convergence in ``nev``.
+    $\mathcal{R}_W$ computed on the subspace is $\ge$ the true one pointwise,
+    with equality as $m \to N$.  Contours therefore move inward as ``nev`` grows,
+    and a feature that matters should be checked for convergence in ``nev``.
     """
-    Q, lam = partial_schur_basis(A, M, tau, nev)
+    W, metric_name = _resolve_metric(metric, M)
+
+    Q, lam = partial_schur_basis(A, M, tau, nev, rank_rtol=rank_rtol)
     A_m = Q.conj().T @ _apply(A, Q)
     M_m = Q.conj().T @ _apply(M, Q)
-    S, T, ritz, qz_resid = qz_pencil(A_m, M_m)
+
+    if W is None:
+        S, T, ritz, qz_resid = qz_pencil(A_m, M_m)
+        info = {"metric cond": np.nan, "whitening": "none",
+                "metric rank": Q.shape[1], "pencil cond": np.nan}
+    else:
+        # Orthogonalise first, whiten second: G is built on the QR basis, never
+        # on the raw eigenvectors, which is what keeps it factorisable.
+        X, info = whitening_factor(metric_gram(W, Q), rtol=metric_rtol)
+        S, T, ritz, qz_resid = qz_pencil(X.conj().T @ A_m @ X,
+                                         X.conj().T @ M_m @ X)
+        S, T, pencil_cond = operator_form(S, T)
+        info["pencil cond"] = pencil_cond
 
     real_range, imag_range = (bounding_box(ritz, tau, n_box=n_box)
                               if window is None else window)
     z, sigma = resolvent_samples(S, T, real_range, imag_range, n_points, seed)
-    X, Y, field, hole = interpolate_to_grid(z, sigma, real_range, imag_range, res)
+    X_grid, Y_grid, field, hole = interpolate_to_grid(
+        z, sigma, real_range, imag_range, res)
 
     def _inside(v):
         return (real_range[0] <= v.real <= real_range[1]
@@ -299,73 +564,300 @@ def pseudospectrum(A, M, tau, nev=50, n_points=2000, res=260, n_box=8,
     inbox = [v for v in lam if _inside(v)]
     win_err = max((float(np.min(np.abs(ritz - v))) for v in inbox), default=0.0)
     ritz_in = np.array([v for v in ritz if _inside(v)], dtype=complex)
+    # What a figure marks: the eigenvalues of the pencil itself, restricted to
+    # the drawn window.  `ritz_in` is the projected system's counterpart and is
+    # kept beside it, because `win_err` -- the distance between the two -- is the
+    # number that says whether the compression is faithful where it is plotted.
+    eigs_in = np.array(inbox, dtype=complex)
 
-    return dict(ritz=ritz, ritz_in=ritz_in, eigenvalues=lam, S=S, T=T,
-                X=X, Y=Y, field=field, z=z, sigma=sigma,
+    return dict(ritz=ritz, ritz_in=ritz_in, eigenvalues=lam, eigs_in=eigs_in,
+                S=S, T=T,
+                X=X_grid, Y=Y_grid, field=field, z=z, sigma=sigma,
                 real_range=real_range, imag_range=imag_range,
-                m=Q.shape[1], N=A.getSize()[0], tau=tau, nev=nev, label=label,
+                m=S.shape[0], m_qr=Q.shape[1], N=A.getSize()[0],
+                tau=tau, nev=nev, label=label, metric=metric_name,
                 qz_resid=qz_resid, win_err=win_err, n_in=len(inbox), hole=hole,
-                **meta)
+                **info, **meta)
+
+
+# ------------------------------------------------------------- non-normality
+def bulge(result, eps=None, q=2.0):
+    r"""How far the $\varepsilon$-pseudospectrum reaches beyond an $\varepsilon$-disc.
+
+    ``max{ dist(z, spectrum) : R(z) <= eps } - eps``, which is zero for an
+    operator that is normal in the metric and grows with the departure from
+    normality.
+
+    ``eps`` should be given explicitly and held fixed across the results being
+    compared: now that the level is a physical quantity rather than a
+    coefficient-vector norm, one $\varepsilon$ means the same perturbation in
+    every formulation, and a bulge computed at a common $\varepsilon$ is a
+    like-for-like number.  Left out, it falls back to the ``q``-th percentile of
+    this result's own samples, which is self-normalising and therefore only
+    comparable with itself.
+
+    Returns ``(bulge, eps)``.
+    """
+    eps_level = float(np.percentile(result["sigma"], q)) if eps is None else float(eps)
+    inside = result["sigma"] <= eps_level
+    if not inside.any() or result["ritz"].size == 0:
+        return np.nan, eps_level
+    d = np.min(np.abs(result["z"][inside][:, None] - result["ritz"][None, :]), axis=1)
+    return float(d.max() - eps_level), eps_level
 
 
 # -------------------------------------------------------------------- plotting
-def decade_levels(field):
-    """The powers of ten spanned by ``field``, i.e. eps = 1e-1, 1e-2, ...
+def decade_levels(field, per_decade=1):
+    """Contour levels spanning ``field``, by default one per decade.
 
     Always at least two levels, so the logarithmic colour scale has a
     non-degenerate range even when the field spans less than one decade.
+    ``per_decade`` > 1 subdivides each decade logarithmically, which is useful
+    when a pseudospectrum is nearly flat over the window.
     """
     lo = int(np.floor(np.log10(field.min())))
     hi = int(np.ceil(np.log10(field.max())))
     if hi <= lo:
         lo, hi = lo - 1, lo + 1
-    return 10.0 ** np.arange(lo, hi + 1)
+    n = max(2, int(round((hi - lo) * per_decade)) + 1)
+    return np.logspace(lo, hi, n)
+
+
+def resolve_levels(field, levels=None, per_decade=1):
+    """Turn the ``levels`` argument of :func:`plot_pseudospectrum` into an array.
+
+    ``None`` gives whole decades; an integer gives that many log-spaced levels
+    across the range of ``field``; anything else is taken as explicit levels.
+    """
+    if levels is None:
+        return decade_levels(field, per_decade=per_decade)
+    if np.isscalar(levels):
+        return np.logspace(np.log10(field.min()), np.log10(field.max()), int(levels))
+    return np.asarray(levels, dtype=float)
+
+
+def shared_scale(results, pad_decades=0.0):
+    r"""A common ``(vmin, vmax)`` for a group of results, for comparable panels.
+
+    Once the projection is whitened against a physical metric the level is an
+    $\varepsilon$ in the units of $z$, mesh-independent and free of the
+    degree-of-freedom count, so a shared scale is legitimate **across
+    formulations** as well as across a physical parameter -- and comparing the
+    levels is then the point of the figure rather than a hazard.  Different
+    formulations may well need *different* metric matrices to measure the same
+    physical field, ``"mass"`` for one and a stiffness matrix for another, and
+    mixing those is exactly what this is for.
+
+    Two things are still required: the results must be drawn on the same window,
+    and every one of them must be weighted.  The second is checked here, because
+    an unweighted result carries a coefficient-vector norm that no physical level
+    can be compared against.
+    """
+    items = list(results.values() if isinstance(results, dict) else results)
+    if any(r.get("metric", "none") == "none" for r in items):
+        raise ValueError("unweighted results have no comparable level; recompute "
+                         "with a metric before sharing a colour scale")
+    lo = min(float(np.min(r["field"])) for r in items)
+    hi = max(float(np.max(r["field"])) for r in items)
+    lo = 10.0 ** (np.floor(np.log10(max(lo, np.finfo(float).tiny))) - pad_decades)
+    hi = 10.0 ** (np.ceil(np.log10(hi)) + pad_decades)
+    return lo, hi
 
 
 def _power_of_ten(value, _pos=None):
-    return rf"$10^{{{int(round(value))}}}$"
+    """Render a log10 value as a power of ten.
+
+    Sub-decade levels (``per_decade`` > 1) must not be rounded to the nearest
+    whole power, or two adjacent contours end up carrying the same label.
+    """
+    nearest = round(value)
+    if abs(value - nearest) < 1e-6:
+        return rf"$10^{{{int(nearest)}}}$"
+    return rf"$10^{{{value:.1f}}}$"
 
 
-def plot_pseudospectrum(result, ax=None, title=None, colorbar=True,
-                        show_samples=False, figsize=(4.6, 3.6), cmap="viridis_r"):
-    """Draw one pseudospectrum: continuous log field, decade contours, eigenvalues.
+#: Colour-bar labels.  Every weighted result gets the same name, whichever matrix
+#: supplied the metric: the point of choosing $W$ per formulation is that they all
+#: end up measuring the same physical norm, so panels laid side by side must not
+#: be labelled as though they showed different quantities.  The unweighted
+#: quantity genuinely is a different object and is named differently.
+_CBAR_LABEL = {"mass": r"$\sigma^{W}_{\min}(z - L_h)$",
+               "custom": r"$\sigma^{W}_{\min}(z - L_h)$",
+               "none": r"$\sigma_{\min}(zM-A)$"}
+
+
+def plot_pseudospectrum(
+        result, ax=None, *, title=None, figsize=(4.6, 3.6),
+        # --- colour field -----------------------------------------------------
+        cmap="viridis_r", vmin=None, vmax=None, norm=None,
+        shading="gouraud", rasterized=True, field_alpha=None,
+        # --- contours ---------------------------------------------------------
+        contours=True, levels=None, per_decade=1, contour_kw=None,
+        clabel=True, clabel_kw=None,
+        # --- eigenvalues ------------------------------------------------------
+        show_eigenvalues=True, eig_kw=None, eig_label="eigenvalues",
+        in_window_only=False,
+        # --- sample points ----------------------------------------------------
+        show_samples=False, sample_kw=None,
+        # --- axes -------------------------------------------------------------
+        xlim=None, ylim=None, xlabel=r"$\mathrm{Re}\,z$",
+        ylabel=r"$\mathrm{Im}\,z$", aspect=None, grid=False, grid_kw=None,
+        # --- colour bar -------------------------------------------------------
+        colorbar=True, colorbar_label="auto", colorbar_kw=None,
+        # --- legend -----------------------------------------------------------
+        legend=False, legend_kw=None):
+    r"""Draw one pseudospectrum: continuous log field, contours, eigenvalues.
 
     The field is Gouraud-shaded on a logarithmic colour scale so it shows no
-    banding; only the overlaid black lines are discrete, and they are labelled
-    with the :math:`\\varepsilon` they bound.  Red dots are the eigenvalues.
+    banding; only the overlaid lines are discrete, and they are labelled with the
+    :math:`\varepsilon` they bound.
+
+    Everything about the appearance can be overridden.  The parameters below are
+    keyword-only, so adding to them never breaks an existing call.
+
+    Parameters
+    ----------
+    result : dict
+        As returned by :func:`pseudospectrum`.
+    ax : matplotlib.axes.Axes, optional
+        Draw into an existing axes; a new figure is made if omitted.
+    title : str, optional
+        Axes title.  Defaults to the formulation and label carried in ``result``;
+        pass ``""`` for no title.
+    cmap, shading, rasterized, field_alpha
+        Passed to ``pcolormesh``.
+    vmin, vmax : float, optional
+        Colour-scale limits.  Default to the first and last contour level.  Fix
+        them across a group of panels -- see :func:`shared_scale` -- when the
+        panels are meant to be compared.
+    norm : matplotlib.colors.Normalize, optional
+        Overrides the default ``LogNorm(vmin, vmax)`` entirely; use for a linear
+        or symmetric-log scale.
+    contours : bool
+        Draw the contour lines at all.
+    levels : None, int or array-like
+        ``None`` gives whole decades (see ``per_decade``); an integer gives that
+        many log-spaced levels; an array is used verbatim.
+    per_decade : int
+        Sub-levels per decade when ``levels is None``.
+    contour_kw, clabel_kw : dict, optional
+        Merged over the defaults for ``contour`` and ``clabel``.
+    clabel : bool
+        Label the contour lines with the value of :math:`\varepsilon`.
+    show_eigenvalues : bool
+        Mark the spectrum.  The markers are the eigenvalues of the full pencil
+        from the SLEPc solve, *not* the Ritz values of the projected system that
+        the contours are computed from; the two agree to ``win_err``, which the
+        result reports and :func:`diagnostics_frame` tabulates as ``window
+        fidelity``.
+    in_window_only : bool
+        Mark only the eigenvalues inside the drawn window rather than all the
+        converged ones.  Cosmetically equivalent -- the axes clip the rest --
+        but it keeps the legend count honest.
+    eig_kw : dict, optional
+        Merged over the default red-dot styling.
+    show_samples : bool
+        Overlay the randomised evaluation points, to make the method visible.
+    xlim, ylim : tuple, optional
+        Axis limits.  Default to the window the result was computed on; pass a
+        narrower pair to zoom without recomputing.
+    aspect : {'equal', 'auto'} or float, optional
+    grid : bool
+    colorbar : bool
+    colorbar_label : str, optional
+        ``"auto"`` names the quantity according to the metric the result was
+        computed with; ``None`` leaves the bar unlabelled.
+    colorbar_kw : dict, optional
+        Passed to ``figure.colorbar``.
+    legend : bool
+    legend_kw : dict, optional
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The axes drawn into.  The artists are also attached to it as the
+        dictionary ``ax.ps_artists`` with keys ``field``, ``contours``,
+        ``eigenvalues``, ``samples`` and ``colorbar`` (``None`` where not drawn),
+        so that any of them can be restyled afterwards.
     """
-    field = np.maximum(result["field"], np.finfo(float).tiny)
-    levels = decade_levels(field)
+    data = np.maximum(result["field"], np.finfo(float).tiny)
+    lv = resolve_levels(data, levels, per_decade)
+    vmin = lv[0] if vmin is None else vmin
+    vmax = lv[-1] if vmax is None else vmax
 
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
     fig = ax.get_figure()
 
-    art = ax.pcolormesh(result["X"], result["Y"], field,
-                        norm=LogNorm(vmin=levels[0], vmax=levels[-1]),
-                        cmap=cmap, shading="gouraud", rasterized=True)
-    lines = ax.contour(result["X"], result["Y"], np.log10(field),
-                       levels=np.log10(levels), colors="k", linewidths=0.5, alpha=0.6)
-    ax.clabel(lines, inline=True, fontsize=6, fmt=_power_of_ten)
+    art = ax.pcolormesh(result["X"], result["Y"], data,
+                        norm=norm if norm is not None else LogNorm(vmin=vmin, vmax=vmax),
+                        cmap=cmap, shading=shading, rasterized=rasterized,
+                        alpha=field_alpha)
 
+    lines = None
+    if contours:
+        kw = dict(colors="k", linewidths=0.5, alpha=0.6)
+        kw.update(contour_kw or {})
+        # Contour on log10 of the field so the levels are evenly weighted.
+        lines = ax.contour(result["X"], result["Y"], np.log10(data),
+                           levels=np.log10(lv), **kw)
+        if clabel:
+            ckw = dict(inline=True, fontsize=6, fmt=_power_of_ten)
+            ckw.update(clabel_kw or {})
+            ax.clabel(lines, **ckw)
+
+    samples = None
     if show_samples:
-        ax.plot(result["z"].real, result["z"].imag, ".", color="w", ms=0.5,
-                alpha=0.30, zorder=3)
+        skw = dict(color="w", ms=0.5, alpha=0.30, zorder=3, linestyle="none",
+                   marker=".")
+        skw.update(sample_kw or {})
+        samples, = ax.plot(result["z"].real, result["z"].imag, **skw)
 
-    ev = result["ritz"]
-    ax.plot(ev.real, ev.imag, "r.", markersize=6, zorder=4, label="eigenvalues")
+    dots = None
+    if show_eigenvalues:
+        # The markers are eigenvalues of the *full* pencil, as returned by the
+        # SLEPc solve -- not the Ritz values of the projected system.  The
+        # contours are a property of the compression and are computed exactly as
+        # before; the spectrum is a property of the discretisation, and a figure
+        # meant for publication should not blur the two.  `win_err` in the result
+        # records how far the two sets sit apart inside the window.
+        # `.get` keeps result dicts built before this change plottable.
+        ev = (result.get("eigs_in", result["ritz_in"]) if in_window_only
+              else result.get("eigenvalues", result["ritz"]))
+        ekw = dict(color="r", marker=".", linestyle="none", markersize=6,
+                   zorder=4, label=eig_label)
+        ekw.update(eig_kw or {})
+        dots, = ax.plot(ev.real, ev.imag, **ekw)
 
+    cbar = None
     if colorbar:
-        fig.colorbar(art, ax=ax).set_label(r"$\sigma_{\min}(zM-A)$")
+        cbar = fig.colorbar(art, ax=ax, **(colorbar_kw or {}))
+        if colorbar_label == "auto":
+            colorbar_label = _CBAR_LABEL[result.get("metric", "none")]
+        if colorbar_label:
+            cbar.set_label(colorbar_label)
 
-    ax.set_xlim(result["real_range"])
-    ax.set_ylim(result["imag_range"])
-    ax.set_xlabel(r"$\mathrm{Re}\,z$")
-    ax.set_ylabel(r"$\mathrm{Im}\,z$")
+    ax.set_xlim(result["real_range"] if xlim is None else xlim)
+    ax.set_ylim(result["imag_range"] if ylim is None else ylim)
+    if xlabel is not None:
+        ax.set_xlabel(xlabel)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+    if aspect is not None:
+        ax.set_aspect(aspect)
+    if grid:
+        ax.grid(**(grid_kw or dict(color="0.85", lw=0.4, alpha=0.6)))
+    if legend:
+        ax.legend(**(legend_kw or dict(fontsize=7, frameon=False)))
+
     if title is None:
         bits = [str(result.get("form", "")), str(result.get("label") or "")]
         title = ",  ".join(b for b in bits if b)
-    ax.set_title(title)
+    if title:
+        ax.set_title(title)
+
+    ax.ps_artists = {"field": art, "contours": lines, "eigenvalues": dots,
+                     "samples": samples, "colorbar": cbar}
     return ax
 
 
@@ -376,6 +868,12 @@ def diagnostics_frame(results, keys=("form", "wind")):
     :math:`\\max|\\lambda_{\\rm SLEPc} - \\mathrm{Ritz}|` over the eigenvalues that
     are actually plotted, and the two imaginary-part columns separate the
     spectrum inside the window from the poorly converged outermost Ritz values.
+
+    ``metric cond`` is the condition number of :math:`Q^*WQ`, the small matrix
+    the whitening factorises, and ``whitening`` records which branch of
+    :func:`whitening_factor` ran: ``cholesky`` everywhere means no direction of
+    the subspace was dropped, and ``m`` equalling the pre-whitening rank
+    confirms it.
     """
     items = results.values() if isinstance(results, dict) else results
     rows = []
@@ -383,6 +881,9 @@ def diagnostics_frame(results, keys=("form", "wind")):
         row = {k: r.get(k) for k in keys if r.get(k) is not None}
         row.update({
             "N": r["N"], "m": r["m"],
+            "metric": r.get("metric", "none"),
+            "metric cond": r.get("metric cond", np.nan),
+            "whitening": r.get("whitening", "none"),
             "QZ residual": r["qz_resid"],
             "max |Im| in window": (np.abs(r["ritz_in"].imag).max()
                                    if r["ritz_in"].size else 0.0),

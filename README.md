@@ -97,28 +97,3 @@ Every code cell is a verbatim copy of a cell of the author's working notebooks; 
 | Figure A.12: Meshes for the annulus and the flat torus | `06_topological_zero_modes.ipynb` | `topological_zero_modes.ipynb` [5] | `topo_mesh_annulus.eps`, `topo_mesh_torus.eps` |
 | Table 4.8: Full-Hodge eigenvalues on (0,π)² at Rm = 1 | `07_full_hodge.ipynb` | `full_hodge_beta_regularity.ipynb` [12] | table |
 | Table 4.9: Half- versus full-Hodge spectra for β2 and β3 | `07_full_hodge.ipynb` | `full_hodge_beta_regularity.ipynb` [14] | table |
-
-## Notes
-
-**Parameter re-runs.** A few thesis items were produced by running an existing cell again with one literal changed. The notebooks keep the cell as saved and add the re-run as a separate cell, marked in its heading and stamped `param_rerun` in the cell metadata; the checker allows nothing but string/number literals to differ.
-
-- `01`: the side-by-side pseudospectrum cell (saved for $\beta_5$, Figure A.5) is re-run with the wind key, the panel titles and the file name changed to produce Figure 4.2 ($\beta_4$), Figure A.3 ($\beta_1$) and Figure A.4 ($\beta_2$).
-- `02`: the $N = 64$, $p = 3$ top-form table cells (saved at $R_m = 10$, Table A.3) are re-run at $R_m = 1$ for Tables 4.4 and A.1, and the $\beta_0$ solve (saved at $p = 3$) is re-run at $p = 1$ for Table A.2. The re-runs reproduce the thesis numbers digit for digit.
-- `03`: the exact-spectrum cell (saved at $R_m = 10$, Table A.7) is re-run at $R_m = 5$ for Table A.5, and the reference solve (saved at $R_m = 1$, Table A.11) at $R_m = 5$ for Table A.6. For Figure 4.9 the formulation key `"B(N^I)"` is changed to `"B(N2)"`: the saved cell crashes in LaTeX on that raw label, and the key already selected the $\mathcal{N}^{\mathrm{II}}$ pencil, so no number changes (see the caveat below).
-- `04`: the mesh panel of Figure 4.12(a) is drawn with `gamma=0.5` instead of the saved `gamma=1`; the saved cell had produced a uniform mesh under the graded-mesh file name, while the thesis figure and caption are the graded mesh.
-
-**Where the code and the thesis captions disagree.** These were found while assembling the folder and are recorded, not fixed; the notebooks are the code as it was run and their outputs are the thesis numbers.
-
-- Table 4.3: the thesis prints the eigenvalues with one decimal fewer than the output (a transcription slip); DoF and condition numbers agree exactly.
-- Table A.2: the caption says $p = 3$; the numbers are the $p = 1$ run. Tables A.3 and A.4: the captions say 1-forms; the runs are top forms.
-- Figure 4.3: the caption's mesh sequence is $N \in \{4, 8, 16, 24, 32\}$; the code uses $N \in \{8, 12, 16, 24, 32, 40\}$, with an unshifted $B(\mathrm{BDM}_2)$ reference for the eigenfunction gaps. Figure 4.4: the caption says 60 eigenvalues; the code uses 200.
-- Figure 4.7: the caption says 300 eigenvalues; the run used 200 (the `run_ps` default bound before `PS_NEV` was raised). Figure 4.9: the caption says 20 eigenvalues and $\tau = 0.9$; the run used 200 and $\tau = 0.9/R_m$, and its row (b) is the $B(\mathcal{N}^{\mathrm{II}}_3)$ discretisation although labelled $B(\mathcal{N}^{\mathrm{I}}_3)$.
-- Tables A.6, A.8, A.9: the captions say $\tau = 0.9$; the solves use $\tau = 0.9/R_m$. Table A.10: the thesis prints $5.11\times10^{6}$ for one condition number that the output gives as $5.11\times10^{5}$.
-- Table 4.6: the condition-number row of the thesis is the $p = 1$ MUMPS estimate from the $h$-study, while the eigenvalues are the $p = 2$ solve; the caption says 40 eigenvalues where the solve requests 30.
-- Figure 4.11: the sub-captions are swapped relative to the files, `domreg_mode_corner` is the $\lambda_1$ mode and `domreg_mode_smooth` the $\lambda_4$ mode. Table A.12: the caption strings inside the code say $\gamma = 1/2$, the run (and the thesis table caption) is uniform, $\gamma = 1$.
-- Figure A.11: the two thesis panels come from an older mesh generator that is not in this folder (192 cells at $\delta = 90^\circ$); the notebook draws its own hierarchy (98 cells at level 0, same $h_{\max} = 0.30$). Figure 4.15: the caption says 100 eigenvalues; the studies request 50 (100 is the reference solve).
-- Table 4.7: the caption says 8 eigenvalues and a threshold of $10^{-8}$; the code keeps 5 of 30 and counts $|\lambda| < 10^{-6}/R_m$, so the torus $\beta_3$ count of 5 is capped by the number kept and the annulus $\beta_2$, $R_m = 30$ entry has $|\lambda_2| = 1.5\times10^{-8}$.
-- Tables 4.8 and 4.9: the condition numbers are the MUMPS componentwise estimate; the half-versus-full cell also computes $B(\mathcal{N}^{\mathrm{II}}_1)$, which the thesis omits.
-- Several cells carry stale caption strings from earlier runs (for example "$R_m = 1$" in cells that run at $R_m = 10$); they are left as they were.
-
-**Not included.** The working folder also holds a cell-Péclet study, a three-dimensional proof of concept, a top-form $\beta$-regularity study, a full-Hodge torus study, the Pac-Man eigenfunction-gap and pseudospectrum sweeps and two tutorials; none of them is used by a thesis figure or table.
